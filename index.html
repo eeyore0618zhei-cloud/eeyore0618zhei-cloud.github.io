@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>高考预填志愿学校地图</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      --border: #d8dee9;
+      --text: #182230;
+      --muted: #5b677a;
+      --bg: #f7f9fc;
+      --panel: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; color: var(--text); background: var(--bg); }
+    .app { display: grid; grid-template-columns: minmax(360px, 430px) 1fr; height: 100vh; min-height: 620px; }
+    aside { border-right: 1px solid var(--border); background: var(--panel); overflow: auto; }
+    .top { padding: 16px 18px 12px; border-bottom: 1px solid var(--border); }
+    h1 { margin: 0 0 8px; font-size: 20px; line-height: 1.25; }
+    .meta { font-size: 13px; color: var(--muted); line-height: 1.55; }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .filters label { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: #fbfcff; }
+    .list { padding: 10px; display: grid; gap: 8px; }
+    .item { border: 1px solid var(--border); border-left-width: 6px; border-radius: 8px; padding: 10px 11px; cursor: pointer; background: #fff; }
+    .item:hover { border-color: #8aa4ce; box-shadow: 0 2px 10px rgba(24,34,48,.08); }
+    .item strong { display: block; font-size: 14px; line-height: 1.35; }
+    .item small { display: block; color: var(--muted); line-height: 1.45; margin-top: 4px; }
+    #map { height: 100%; width: 100%; }
+    .legend { position: absolute; z-index: 500; right: 14px; top: 14px; background: rgba(255,255,255,.96); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; box-shadow: 0 2px 14px rgba(24,34,48,.12); font-size: 13px; }
+    .legend div { display: flex; align-items: center; gap: 7px; margin: 4px 0; }
+    .dot { width: 12px; height: 12px; border-radius: 99px; display: inline-block; border: 1px solid rgba(0,0,0,.25); }
+    .popup h2 { margin: 0 0 6px; font-size: 16px; }
+    .popup p { margin: 4px 0; line-height: 1.45; }
+    .popup .risk { margin-top: 7px; padding-top: 7px; border-top: 1px solid #e6eaf0; color: #9a3412; }
+    .popup a { color: #175cd3; text-decoration: none; margin-right: 10px; }
+    .leaflet-popup-content { min-width: 280px; }
+    .fallback { display: none; padding: 12px 18px; color: #9a3412; background: #fff7ed; border-bottom: 1px solid #fed7aa; }
+    @media (max-width: 860px) {
+      .app { grid-template-columns: 1fr; grid-template-rows: 45vh 55vh; }
+      aside { grid-row: 2; border-right: 0; border-top: 1px solid var(--border); }
+      #map { grid-row: 1; }
+      .legend { left: 10px; right: auto; top: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="top">
+        <h1>高考预填志愿学校地图</h1>
+        <div class="meta">共 24 个地图点。颜色表示冲稳保；多校区学校会拆成多个点，方便看距离。</div>
+        <div class="filters" id="filters"></div>
+      </div>
+      <div class="fallback" id="fallback">地图底图需要联网加载 Leaflet/OpenStreetMap；如果底图暂时打不开，可用每个点里的高德/百度地图链接。</div>
+      <div class="list" id="list"></div>
+    </aside>
+    <main style="position:relative;">
+      <div id="map"></div>
+      <div class="legend" id="legend"></div>
+    </main>
+  </div>
+  <script>
+    const markers = [{"order": "1", "sub": "", "tier": "冲高", "school": "湖北工业大学工程技术学院", "group": "204", "campus": "校本部", "address": "湖北省武汉市洪山区南李路28号附近", "lat": 30.4879, "lon": 114.3162, "confidence": "中", "rank": "12681", "diff": "7264", "score": "464", "city": "武汉市", "location": "校本部", "nature": "民办本科", "plan": "2", "fee_high": "22000", "clean": "干净", "selected": "1.011 数字媒体艺术", "major_detail": "1.011 数字媒体艺术｜计划2｜学费22000-22000｜校本部", "risk": "去年最低排位比她靠前 7264 名，属于偏高冲。；组内风险相对少。", "amap": "https://uri.amap.com/search?keyword=%E6%B9%96%E5%8C%97%E7%9C%81%E6%AD%A6%E6%B1%89%E5%B8%82%E6%B4%AA%E5%B1%B1%E5%8C%BA%E5%8D%97%E6%9D%8E%E8%B7%AF28%E5%8F%B7%E9%99%84%E8%BF%91", "baidu": "https://map.baidu.com/search/%E6%B9%96%E5%8C%97%E7%9C%81%E6%AD%A6%E6%B1%89%E5%B8%82%E6%B4%AA%E5%B1%B1%E5%8C%BA%E5%8D%97%E6%9D%8E%E8%B7%AF28%E5%8F%B7%E9%99%84%E8%BF%91"}, {"order": "2", "sub": "", "tier": "冲高", "school": "集美大学诚毅学院", "group": "206", "campus": "集美学村/诚毅学院", "address": "福建省厦门市集美区集美学村", "lat": 24.6108, "lon": 118.1031, "confidence": "中", "rank": "9568", "diff": "10377", "score": "479", "city": "福建省厦门市", "location": "福建省厦门市", "nature": "民办本科", "plan": "3", "fee_high": "25000", "clean": "干净", "selected": "1.030 视觉传达设计", "major_detail": "1.030 视觉传达设计｜计划3｜学费25000-25000｜福建省厦门市", "risk": "去年最低排位比她靠前 10377 名，属于偏高冲。；组内风险相对少。", "amap": "https://uri.amap.com/search?keyword=%E7%A6%8F%E5%BB%BA%E7%9C%81%E5%8E%A6%E9%97%A8%E5%B8%82%E9%9B%86%E7%BE%8E%E5%8C%BA%E9%9B%86%E7%BE%8E%E5%AD%A6%E6%9D%91", "baidu": "https://map.baidu.com/search/%E7%A6%8F%E5%BB%BA%E7%9C%81%E5%8E%A6%E9%97%A8%E5%B8%82%E9%9B%86%E7%BE%8E%E5%8C%BA%E9%9B%86%E7%BE%8E%E5%AD%A6%E6%9D%91"}, {"order": "3", "sub": "", "tier": "冲高", "school": "电子科技大学中山学院", "group": "206", "campus": "校本部", "address": "广东省中山市石岐街道学院路1号", "lat": 22.5408, "lon": 113.3825, "confidence": "高", "rank": "11981", "diff": "7964", "score": "467", "city": "中山市", "location": "校本部", "nature": "民办本科", "plan": "159", "fee_high": "35000", "clean": "有特殊/高收费", "selected": "1.031 视觉传达设计；2.032 产品设计", "major_detail": "1.031 视觉传达设计｜计划125｜学费35000-35000｜校本部\n2.032 产品设计｜计划34｜学费35000-35000｜校本部", "risk": "去年最低排位比她靠前 7964 名，属于偏高冲。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%B8%AD%E5%B1%B1%E5%B8%82%E7%9F%B3%E5%B2%90%E8%A1%97%E9%81%93%E5%AD%A6%E9%99%A2%E8%B7%AF1%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%B8%AD%E5%B1%B1%E5%B8%82%E7%9F%B3%E5%B2%90%E8%A1%97%E9%81%93%E5%AD%A6%E9%99%A2%E8%B7%AF1%E5%8F%B7"}, {"order": "4", "sub": "", "tier": "稳", "school": "广东东软学院", "group": "228", "campus": "佛山南海校本部", "address": "广东省佛山市南海区狮山镇南海软件科技园", "lat": 23.08, "lon": 113.17, "confidence": "高", "rank": "20348", "diff": "-403", "score": "428", "city": "佛山市", "location": "校本部", "nature": "民办本科", "plan": "72", "fee_high": "33800", "clean": "有特殊/高收费", "selected": "1.030 数字媒体艺术", "major_detail": "1.030 数字媒体艺术｜计划72｜学费33800-33800｜校本部", "risk": "去年最低排位比她靠后 403 名，接近定位略稳。；组内有高收费/特殊项目，需确认费用和项目性质。；2025排位为近似匹配，填报前建议复核去年专业组对应。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%BD%9B%E5%B1%B1%E5%B8%82%E5%8D%97%E6%B5%B7%E5%8C%BA%E7%8B%AE%E5%B1%B1%E9%95%87%E5%8D%97%E6%B5%B7%E8%BD%AF%E4%BB%B6%E7%A7%91%E6%8A%80%E5%9B%AD", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%BD%9B%E5%B1%B1%E5%B8%82%E5%8D%97%E6%B5%B7%E5%8C%BA%E7%8B%AE%E5%B1%B1%E9%95%87%E5%8D%97%E6%B5%B7%E8%BD%AF%E4%BB%B6%E7%A7%91%E6%8A%80%E5%9B%AD"}, {"order": "5", "sub": "", "tier": "冲高", "school": "广东东软学院", "group": "226", "campus": "佛山南海校本部", "address": "广东省佛山市南海区狮山镇南海软件科技园", "lat": 23.08, "lon": 113.17, "confidence": "高", "rank": "14574", "diff": "5371", "score": "455", "city": "佛山市", "location": "校本部", "nature": "民办本科", "plan": "76", "fee_high": "33800", "clean": "有特殊/高收费", "selected": "1.028 视觉传达设计", "major_detail": "1.028 视觉传达设计｜计划76｜学费33800-33800｜校本部", "risk": "去年最低排位比她靠前 5371 名，属于偏高冲。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%BD%9B%E5%B1%B1%E5%B8%82%E5%8D%97%E6%B5%B7%E5%8C%BA%E7%8B%AE%E5%B1%B1%E9%95%87%E5%8D%97%E6%B5%B7%E8%BD%AF%E4%BB%B6%E7%A7%91%E6%8A%80%E5%9B%AD", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%BD%9B%E5%B1%B1%E5%B8%82%E5%8D%97%E6%B5%B7%E5%8C%BA%E7%8B%AE%E5%B1%B1%E9%95%87%E5%8D%97%E6%B5%B7%E8%BD%AF%E4%BB%B6%E7%A7%91%E6%8A%80%E5%9B%AD"}, {"order": "6", "sub": "", "tier": "稳", "school": "广东东软学院", "group": "227", "campus": "佛山南海校本部", "address": "广东省佛山市南海区狮山镇南海软件科技园", "lat": 23.08, "lon": 113.17, "confidence": "高", "rank": "20348", "diff": "-403", "score": "428", "city": "佛山市", "location": "校本部", "nature": "民办本科", "plan": "72", "fee_high": "33800", "clean": "有特殊/高收费", "selected": "1.029 动画", "major_detail": "1.029 动画｜计划72｜学费33800-33800｜校本部", "risk": "去年最低排位比她靠后 403 名，接近定位略稳。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%BD%9B%E5%B1%B1%E5%B8%82%E5%8D%97%E6%B5%B7%E5%8C%BA%E7%8B%AE%E5%B1%B1%E9%95%87%E5%8D%97%E6%B5%B7%E8%BD%AF%E4%BB%B6%E7%A7%91%E6%8A%80%E5%9B%AD", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%BD%9B%E5%B1%B1%E5%B8%82%E5%8D%97%E6%B5%B7%E5%8C%BA%E7%8B%AE%E5%B1%B1%E9%95%87%E5%8D%97%E6%B5%B7%E8%BD%AF%E4%BB%B6%E7%A7%91%E6%8A%80%E5%9B%AD"}, {"order": "7", "sub": "", "tier": "冲高", "school": "广州南方学院", "group": "219", "campus": "从化校本部", "address": "广东省广州市从化区温泉镇温泉大道882号", "lat": 23.6502, "lon": 113.6257, "confidence": "高", "rank": "15264", "diff": "4681", "score": "452", "city": "广州市", "location": "校本部", "nature": "民办本科", "plan": "164", "fee_high": "38000", "clean": "有特殊/高收费", "selected": "1.104 设计学类", "major_detail": "1.104 设计学类｜计划164｜学费38000-38000｜校本部", "risk": "去年最低排位比她靠前 4681 名，属于偏高冲。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E4%BB%8E%E5%8C%96%E5%8C%BA%E6%B8%A9%E6%B3%89%E9%95%87%E6%B8%A9%E6%B3%89%E5%A4%A7%E9%81%93882%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E4%BB%8E%E5%8C%96%E5%8C%BA%E6%B8%A9%E6%B3%89%E9%95%87%E6%B8%A9%E6%B3%89%E5%A4%A7%E9%81%93882%E5%8F%B7"}, {"order": "8", "sub": "", "tier": "小冲/稳", "school": "广州软件学院", "group": "220", "campus": "广州校区", "address": "广东省广州市从化区太平镇广从南路548号", "lat": 23.5566, "lon": 113.5837, "confidence": "高", "rank": "19531", "diff": "414", "score": "432", "city": "广州市", "location": "广州校区", "nature": "民办本科", "plan": "108", "fee_high": "40000", "clean": "有特殊/高收费", "selected": "1.049 动画", "major_detail": "1.049 动画｜计划108｜学费40000-40000｜广州校区", "risk": "去年最低排位比她靠前 414 名，接近定位。；组内有高收费/特殊项目，需确认费用和项目性质。；2025排位为近似匹配，填报前建议复核去年专业组对应。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E4%BB%8E%E5%8C%96%E5%8C%BA%E5%A4%AA%E5%B9%B3%E9%95%87%E5%B9%BF%E4%BB%8E%E5%8D%97%E8%B7%AF548%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E4%BB%8E%E5%8C%96%E5%8C%BA%E5%A4%AA%E5%B9%B3%E9%95%87%E5%B9%BF%E4%BB%8E%E5%8D%97%E8%B7%AF548%E5%8F%B7"}, {"order": "9", "sub": 1, "tier": "保底", "school": "广州理工学院", "group": "207", "campus": "惠州博罗校区（第一学年）", "address": "广东省惠州市博罗县龙华镇，具体地址请以录取通知/学校新生指南为准", "lat": 23.183, "lon": 114.143, "confidence": "低", "rank": "24204", "diff": "-4259", "score": "405", "city": "广州市", "location": "第一学年惠州博罗校区，第二至四学年广州白云校区；广州白云校区", "nature": "民办本科", "plan": "260", "fee_high": "37000", "clean": "有特殊/高收费", "selected": "1.062 数字媒体艺术；2.061 视觉传达设计；3.063 产品设计", "major_detail": "1.062 数字媒体艺术｜计划100｜学费37000-37000｜第一学年惠州博罗校区，第二至四学年广州白云校区\n2.061 视觉传达设计｜计划100｜学费37000-37000｜第一学年惠州博罗校区，第二至四学年广州白云校区\n3.063 产品设计｜计划60｜学费37000-37000｜广州白云校区", "risk": "去年最低排位比她靠后 4259 名，偏兜底。；组内有高收费/特殊项目，需确认费用和项目性质。；2025排位为近似匹配，填报前建议复核去年专业组对应。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E6%83%A0%E5%B7%9E%E5%B8%82%E5%8D%9A%E7%BD%97%E5%8E%BF%E9%BE%99%E5%8D%8E%E9%95%87%EF%BC%8C%E5%85%B7%E4%BD%93%E5%9C%B0%E5%9D%80%E8%AF%B7%E4%BB%A5%E5%BD%95%E5%8F%96%E9%80%9A%E7%9F%A5/%E5%AD%A6%E6%A0%A1%E6%96%B0%E7%94%9F%E6%8C%87%E5%8D%97%E4%B8%BA%E5%87%86", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E6%83%A0%E5%B7%9E%E5%B8%82%E5%8D%9A%E7%BD%97%E5%8E%BF%E9%BE%99%E5%8D%8E%E9%95%87%EF%BC%8C%E5%85%B7%E4%BD%93%E5%9C%B0%E5%9D%80%E8%AF%B7%E4%BB%A5%E5%BD%95%E5%8F%96%E9%80%9A%E7%9F%A5/%E5%AD%A6%E6%A0%A1%E6%96%B0%E7%94%9F%E6%8C%87%E5%8D%97%E4%B8%BA%E5%87%86"}, {"order": "9", "sub": 2, "tier": "保底", "school": "广州理工学院", "group": "207", "campus": "广州白云校区（第二至四学年）", "address": "广东省广州市白云区，具体地址请以学校新生指南为准", "lat": 23.316, "lon": 113.382, "confidence": "低", "rank": "24204", "diff": "-4259", "score": "405", "city": "广州市", "location": "第一学年惠州博罗校区，第二至四学年广州白云校区；广州白云校区", "nature": "民办本科", "plan": "260", "fee_high": "37000", "clean": "有特殊/高收费", "selected": "1.062 数字媒体艺术；2.061 视觉传达设计；3.063 产品设计", "major_detail": "1.062 数字媒体艺术｜计划100｜学费37000-37000｜第一学年惠州博罗校区，第二至四学年广州白云校区\n2.061 视觉传达设计｜计划100｜学费37000-37000｜第一学年惠州博罗校区，第二至四学年广州白云校区\n3.063 产品设计｜计划60｜学费37000-37000｜广州白云校区", "risk": "去年最低排位比她靠后 4259 名，偏兜底。；组内有高收费/特殊项目，需确认费用和项目性质。；2025排位为近似匹配，填报前建议复核去年专业组对应。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E7%99%BD%E4%BA%91%E5%8C%BA%EF%BC%8C%E5%85%B7%E4%BD%93%E5%9C%B0%E5%9D%80%E8%AF%B7%E4%BB%A5%E5%AD%A6%E6%A0%A1%E6%96%B0%E7%94%9F%E6%8C%87%E5%8D%97%E4%B8%BA%E5%87%86", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E7%99%BD%E4%BA%91%E5%8C%BA%EF%BC%8C%E5%85%B7%E4%BD%93%E5%9C%B0%E5%9D%80%E8%AF%B7%E4%BB%A5%E5%AD%A6%E6%A0%A1%E6%96%B0%E7%94%9F%E6%8C%87%E5%8D%97%E4%B8%BA%E5%87%86"}, {"order": "10", "sub": 1, "tier": "保底", "school": "广东科技学院", "group": "214", "campus": "南城校区（可能校区，需核）", "address": "广东省东莞市南城街道西湖路99号", "lat": 23.006, "lon": 113.735, "confidence": "中", "rank": "24833", "diff": "-4888", "score": "400", "city": "东莞市", "location": "东莞市", "nature": "民办本科", "plan": "60", "fee_high": "38800", "clean": "有特殊/高收费", "selected": "1.083 数字媒体艺术；2.081 视觉传达设计", "major_detail": "1.083 数字媒体艺术｜计划30｜学费38800-38800｜东莞市\n2.081 视觉传达设计｜计划30｜学费38800-38800｜东莞市", "risk": "去年最低排位比她靠后 4888 名，偏兜底。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%B8%9C%E8%8E%9E%E5%B8%82%E5%8D%97%E5%9F%8E%E8%A1%97%E9%81%93%E8%A5%BF%E6%B9%96%E8%B7%AF99%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%B8%9C%E8%8E%9E%E5%B8%82%E5%8D%97%E5%9F%8E%E8%A1%97%E9%81%93%E8%A5%BF%E6%B9%96%E8%B7%AF99%E5%8F%B7"}, {"order": "10", "sub": 2, "tier": "保底", "school": "广东科技学院", "group": "214", "campus": "松山湖校区（可能校区，需核）", "address": "广东省东莞市石排镇东园大道2号", "lat": 23.058, "lon": 113.952, "confidence": "中", "rank": "24833", "diff": "-4888", "score": "400", "city": "东莞市", "location": "东莞市", "nature": "民办本科", "plan": "60", "fee_high": "38800", "clean": "有特殊/高收费", "selected": "1.083 数字媒体艺术；2.081 视觉传达设计", "major_detail": "1.083 数字媒体艺术｜计划30｜学费38800-38800｜东莞市\n2.081 视觉传达设计｜计划30｜学费38800-38800｜东莞市", "risk": "去年最低排位比她靠后 4888 名，偏兜底。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%B8%9C%E8%8E%9E%E5%B8%82%E7%9F%B3%E6%8E%92%E9%95%87%E4%B8%9C%E5%9B%AD%E5%A4%A7%E9%81%932%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%B8%9C%E8%8E%9E%E5%B8%82%E7%9F%B3%E6%8E%92%E9%95%87%E4%B8%9C%E5%9B%AD%E5%A4%A7%E9%81%932%E5%8F%B7"}, {"order": "11", "sub": "", "tier": "保底", "school": "东莞城市学院", "group": "201", "campus": "东莞校区", "address": "广东省东莞市寮步镇文昌路1号", "lat": 23.0035, "lon": 113.8617, "confidence": "高", "rank": "25309", "diff": "-5364", "score": "396", "city": "东莞城市", "location": "校本部", "nature": "民办本科", "plan": "457", "fee_high": "36800", "clean": "有特殊/高收费", "selected": "1.005 数字媒体艺术；2.006 视觉传达设计；3.095 新媒体艺术", "major_detail": "1.005 数字媒体艺术｜计划305｜学费36800-36800｜校本部\n2.006 视觉传达设计｜计划102｜学费36800-36800｜校本部\n3.095 新媒体艺术｜计划50｜学费36800-36800｜校本部", "risk": "去年最低排位比她靠后 5364 名，偏兜底。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%B8%9C%E8%8E%9E%E5%B8%82%E5%AF%AE%E6%AD%A5%E9%95%87%E6%96%87%E6%98%8C%E8%B7%AF1%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%B8%9C%E8%8E%9E%E5%B8%82%E5%AF%AE%E6%AD%A5%E9%95%87%E6%96%87%E6%98%8C%E8%B7%AF1%E5%8F%B7"}, {"order": "12", "sub": "", "tier": "保底", "school": "广州工商学院", "group": "242", "campus": "广州校区", "address": "广东省广州市花都区狮岭镇海布", "lat": 23.447, "lon": 113.126, "confidence": "中", "rank": "25437", "diff": "-5492", "score": "395", "city": "广州市", "location": "广州校区", "nature": "民办本科", "plan": "20", "fee_high": "55800", "clean": "有特殊/高收费", "selected": "1.202 视觉传达设计", "major_detail": "1.202 视觉传达设计｜计划20｜学费55800-55800｜广州校区", "risk": "去年最低排位比她靠后 5492 名，偏兜底。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E8%8A%B1%E9%83%BD%E5%8C%BA%E7%8B%AE%E5%B2%AD%E9%95%87%E6%B5%B7%E5%B8%83", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E8%8A%B1%E9%83%BD%E5%8C%BA%E7%8B%AE%E5%B2%AD%E9%95%87%E6%B5%B7%E5%B8%83"}, {"order": "13", "sub": "", "tier": "保底", "school": "华南农业大学珠江学院", "group": "252", "campus": "广州校区", "address": "广东省广州市从化区江埔街锦洞路168号", "lat": 23.566, "lon": 113.607, "confidence": "中", "rank": "25187", "diff": "-5242", "score": "397", "city": "广州市", "location": "广州校区", "nature": "民办本科", "plan": "20", "fee_high": "49800", "clean": "有特殊/高收费", "selected": "1.323 数字媒体艺术；2.324 视觉传达设计", "major_detail": "1.323 数字媒体艺术｜计划10｜学费49800-49800｜广州校区\n2.324 视觉传达设计｜计划10｜学费49800-49800｜广州校区", "risk": "去年最低排位比她靠后 5242 名，偏兜底。；组内有高收费/特殊项目，需确认费用和项目性质。；2025排位为近似匹配，填报前建议复核去年专业组对应。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E4%BB%8E%E5%8C%96%E5%8C%BA%E6%B1%9F%E5%9F%94%E8%A1%97%E9%94%A6%E6%B4%9E%E8%B7%AF168%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E4%BB%8E%E5%8C%96%E5%8C%BA%E6%B1%9F%E5%9F%94%E8%A1%97%E9%94%A6%E6%B4%9E%E8%B7%AF168%E5%8F%B7"}, {"order": "14", "sub": "", "tier": "冲高", "school": "广东白云学院", "group": "229", "campus": "北校区", "address": "广东省广州市白云区钟落潭镇九佛西路280号", "lat": 23.39, "lon": 113.46, "confidence": "高", "rank": "15919", "diff": "4026", "score": "449", "city": "广州市", "location": "北校区", "nature": "民办本科", "plan": "500", "fee_high": "34800", "clean": "谨慎+特殊", "selected": "1.081 数字媒体艺术；2.077 视觉传达设计；3.078 产品设计；4.082 动画", "major_detail": "1.081 数字媒体艺术｜计划120｜学费34800-34800｜北校区\n2.077 视觉传达设计｜计划140｜学费34800-34800｜北校区\n3.078 产品设计｜计划50｜学费34800-34800｜北校区\n4.082 动画｜计划60｜学费34800-34800｜北校区", "risk": "去年最低排位比她靠前 4026 名，属于偏高冲。；已服从，组内有谨慎专业，存在被调剂到不想读专业的风险。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E7%99%BD%E4%BA%91%E5%8C%BA%E9%92%9F%E8%90%BD%E6%BD%AD%E9%95%87%E4%B9%9D%E4%BD%9B%E8%A5%BF%E8%B7%AF280%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E7%99%BD%E4%BA%91%E5%8C%BA%E9%92%9F%E8%90%BD%E6%BD%AD%E9%95%87%E4%B9%9D%E4%BD%9B%E8%A5%BF%E8%B7%AF280%E5%8F%B7"}, {"order": "15", "sub": "", "tier": "冲", "school": "广州商学院", "group": "209", "campus": "黄埔校本部", "address": "广东省广州市黄埔区知识大道300号", "lat": 23.28, "lon": 113.58, "confidence": "高", "rank": "17425", "diff": "2520", "score": "442", "city": "广州市", "location": "校本部", "nature": "民办本科", "plan": "686", "fee_high": "35800", "clean": "谨慎+特殊", "selected": "1.096 数字媒体艺术；2.093 视觉传达设计；3.095 产品设计", "major_detail": "1.096 数字媒体艺术｜计划216｜学费35800-35800｜校本部\n2.093 视觉传达设计｜计划180｜学费35800-35800｜校本部\n3.095 产品设计｜计划130｜学费35800-35800｜校本部", "risk": "去年最低排位比她靠前 2520 名，有冲刺空间。；已服从，组内有谨慎专业，存在被调剂到不想读专业的风险。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E9%BB%84%E5%9F%94%E5%8C%BA%E7%9F%A5%E8%AF%86%E5%A4%A7%E9%81%93300%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E9%BB%84%E5%9F%94%E5%8C%BA%E7%9F%A5%E8%AF%86%E5%A4%A7%E9%81%93300%E5%8F%B7"}, {"order": "16", "sub": "", "tier": "小冲/稳", "school": "广州软件学院", "group": "222", "campus": "江门校区（招生系统校区，具体地址待核）", "address": "广东省江门市新会区，校区精确地址请以学校/录取通知为准", "lat": 22.458, "lon": 113.034, "confidence": "低", "rank": "19531", "diff": "414", "score": "432", "city": "广州市", "location": "江门校区", "nature": "民办本科", "plan": "99", "fee_high": "36000", "clean": "有特殊/高收费", "selected": "1.053 数字媒体艺术", "major_detail": "1.053 数字媒体艺术｜计划99｜学费36000-36000｜江门校区", "risk": "去年最低排位比她靠前 414 名，接近定位。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E6%B1%9F%E9%97%A8%E5%B8%82%E6%96%B0%E4%BC%9A%E5%8C%BA%EF%BC%8C%E6%A0%A1%E5%8C%BA%E7%B2%BE%E7%A1%AE%E5%9C%B0%E5%9D%80%E8%AF%B7%E4%BB%A5%E5%AD%A6%E6%A0%A1/%E5%BD%95%E5%8F%96%E9%80%9A%E7%9F%A5%E4%B8%BA%E5%87%86", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E6%B1%9F%E9%97%A8%E5%B8%82%E6%96%B0%E4%BC%9A%E5%8C%BA%EF%BC%8C%E6%A0%A1%E5%8C%BA%E7%B2%BE%E7%A1%AE%E5%9C%B0%E5%9D%80%E8%AF%B7%E4%BB%A5%E5%AD%A6%E6%A0%A1/%E5%BD%95%E5%8F%96%E9%80%9A%E7%9F%A5%E4%B8%BA%E5%87%86"}, {"order": "17", "sub": "", "tier": "保底", "school": "广州应用科技学院", "group": "230", "campus": "肇庆校区", "address": "广东省肇庆市鼎湖区莲花镇丰乐路20号", "lat": 23.24, "lon": 112.777, "confidence": "中", "rank": "25438", "diff": "-5493", "score": "395", "city": "广州市", "location": "肇庆校区", "nature": "民办本科", "plan": "43", "fee_high": "36800", "clean": "有特殊/高收费", "selected": "1.080 数字媒体艺术；2.079 视觉传达设计；3.081 产品设计", "major_detail": "1.080 数字媒体艺术｜计划14｜学费36800-36800｜肇庆校区\n2.079 视觉传达设计｜计划16｜学费36800-36800｜肇庆校区\n3.081 产品设计｜计划13｜学费36800-36800｜肇庆校区", "risk": "去年最低排位比她靠后 5493 名，偏兜底。；组内有高收费/特殊项目，需确认费用和项目性质。；2025排位为近似匹配，填报前建议复核去年专业组对应。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E8%82%87%E5%BA%86%E5%B8%82%E9%BC%8E%E6%B9%96%E5%8C%BA%E8%8E%B2%E8%8A%B1%E9%95%87%E4%B8%B0%E4%B9%90%E8%B7%AF20%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E8%82%87%E5%BA%86%E5%B8%82%E9%BC%8E%E6%B9%96%E5%8C%BA%E8%8E%B2%E8%8A%B1%E9%95%87%E4%B8%B0%E4%B9%90%E8%B7%AF20%E5%8F%B7"}, {"order": "18", "sub": "", "tier": "保底", "school": "广州华立学院", "group": "219", "campus": "广州校区", "address": "广东省广州市增城区广州华立科技园", "lat": 23.286, "lon": 113.782, "confidence": "中", "rank": "25432", "diff": "-5487", "score": "395", "city": "广州市", "location": "广州校区", "nature": "民办本科", "plan": "344", "fee_high": "37800", "clean": "谨慎+特殊", "selected": "1.064 数字媒体艺术；2.063 视觉传达设计；3.065 动画", "major_detail": "1.064 数字媒体艺术｜计划100｜学费37800-37800｜广州校区\n2.063 视觉传达设计｜计划152｜学费37800-37800｜广州校区\n3.065 动画｜计划42｜学费37800-37800｜广州校区", "risk": "去年最低排位比她靠后 5487 名，偏兜底。；已服从，组内有谨慎专业，存在被调剂到不想读专业的风险。；组内有高收费/特殊项目，需确认费用和项目性质。；2025排位为近似匹配，填报前建议复核去年专业组对应。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E5%A2%9E%E5%9F%8E%E5%8C%BA%E5%B9%BF%E5%B7%9E%E5%8D%8E%E7%AB%8B%E7%A7%91%E6%8A%80%E5%9B%AD", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E5%A2%9E%E5%9F%8E%E5%8C%BA%E5%B9%BF%E5%B7%9E%E5%8D%8E%E7%AB%8B%E7%A7%91%E6%8A%80%E5%9B%AD"}, {"order": "19", "sub": 1, "tier": "保底", "school": "广东科技学院", "group": "213", "campus": "南城校区（可能校区，需核）", "address": "广东省东莞市南城街道西湖路99号", "lat": 23.006, "lon": 113.735, "confidence": "中", "rank": "25082", "diff": "-5137", "score": "398", "city": "东莞市", "location": "东莞市", "nature": "民办本科", "plan": "220", "fee_high": "36800", "clean": "谨慎+特殊", "selected": "1.082 数字媒体艺术；2.080 视觉传达设计；3.085 产品设计", "major_detail": "1.082 数字媒体艺术｜计划55｜学费36800-36800｜东莞市\n2.080 视觉传达设计｜计划55｜学费36800-36800｜东莞市\n3.085 产品设计｜计划30｜学费36800-36800｜东莞市", "risk": "去年最低排位比她靠后 5137 名，偏兜底。；已服从，组内有谨慎专业，存在被调剂到不想读专业的风险。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%B8%9C%E8%8E%9E%E5%B8%82%E5%8D%97%E5%9F%8E%E8%A1%97%E9%81%93%E8%A5%BF%E6%B9%96%E8%B7%AF99%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%B8%9C%E8%8E%9E%E5%B8%82%E5%8D%97%E5%9F%8E%E8%A1%97%E9%81%93%E8%A5%BF%E6%B9%96%E8%B7%AF99%E5%8F%B7"}, {"order": "19", "sub": 2, "tier": "保底", "school": "广东科技学院", "group": "213", "campus": "松山湖校区（可能校区，需核）", "address": "广东省东莞市石排镇东园大道2号", "lat": 23.058, "lon": 113.952, "confidence": "中", "rank": "25082", "diff": "-5137", "score": "398", "city": "东莞市", "location": "东莞市", "nature": "民办本科", "plan": "220", "fee_high": "36800", "clean": "谨慎+特殊", "selected": "1.082 数字媒体艺术；2.080 视觉传达设计；3.085 产品设计", "major_detail": "1.082 数字媒体艺术｜计划55｜学费36800-36800｜东莞市\n2.080 视觉传达设计｜计划55｜学费36800-36800｜东莞市\n3.085 产品设计｜计划30｜学费36800-36800｜东莞市", "risk": "去年最低排位比她靠后 5137 名，偏兜底。；已服从，组内有谨慎专业，存在被调剂到不想读专业的风险。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%B8%9C%E8%8E%9E%E5%B8%82%E7%9F%B3%E6%8E%92%E9%95%87%E4%B8%9C%E5%9B%AD%E5%A4%A7%E9%81%932%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E4%B8%9C%E8%8E%9E%E5%B8%82%E7%9F%B3%E6%8E%92%E9%95%87%E4%B8%9C%E5%9B%AD%E5%A4%A7%E9%81%932%E5%8F%B7"}, {"order": "20", "sub": 1, "tier": "保底", "school": "广州华商学院", "group": "231", "campus": "肇庆校区（第一、二学年）", "address": "广东省肇庆市四会市东城街道工业大道1号", "lat": 23.343, "lon": 112.725, "confidence": "中", "rank": "25549", "diff": "-5604", "score": "394", "city": "广州市", "location": "第一、二学年肇庆校区，第三、四学年广州校区；广州校区", "nature": "民办本科", "plan": "238", "fee_high": "39800", "clean": "谨慎+特殊", "selected": "1.202 数字媒体艺术；2.201 视觉传达设计；3.205 数字媒体艺术；4.206 视觉传达设计；5.204 动画", "major_detail": "1.202 数字媒体艺术｜计划40｜学费39000-39000｜第一、二学年肇庆校区，第三、四学年广州校区\n2.201 视觉传达设计｜计划39｜学费39000-39000｜第一、二学年肇庆校区，第三、四学年广州校区\n3.205 数字媒体艺术｜计划39｜学费39800-39800｜广州校区\n4.206 视觉传达设计｜计划30｜学费39800-39800｜广州校区\n5.204 动画｜计划30｜学费39000-39000｜广州校区", "risk": "去年最低排位比她靠后 5604 名，偏兜底。；已服从，组内有谨慎专业，存在被调剂到不想读专业的风险。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E8%82%87%E5%BA%86%E5%B8%82%E5%9B%9B%E4%BC%9A%E5%B8%82%E4%B8%9C%E5%9F%8E%E8%A1%97%E9%81%93%E5%B7%A5%E4%B8%9A%E5%A4%A7%E9%81%931%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E8%82%87%E5%BA%86%E5%B8%82%E5%9B%9B%E4%BC%9A%E5%B8%82%E4%B8%9C%E5%9F%8E%E8%A1%97%E9%81%93%E5%B7%A5%E4%B8%9A%E5%A4%A7%E9%81%931%E5%8F%B7"}, {"order": "20", "sub": 2, "tier": "保底", "school": "广州华商学院", "group": "231", "campus": "广州校区（第三、四学年）", "address": "广东省广州市增城区荔湖街道华商路1号", "lat": 23.285, "lon": 113.815, "confidence": "中", "rank": "25549", "diff": "-5604", "score": "394", "city": "广州市", "location": "第一、二学年肇庆校区，第三、四学年广州校区；广州校区", "nature": "民办本科", "plan": "238", "fee_high": "39800", "clean": "谨慎+特殊", "selected": "1.202 数字媒体艺术；2.201 视觉传达设计；3.205 数字媒体艺术；4.206 视觉传达设计；5.204 动画", "major_detail": "1.202 数字媒体艺术｜计划40｜学费39000-39000｜第一、二学年肇庆校区，第三、四学年广州校区\n2.201 视觉传达设计｜计划39｜学费39000-39000｜第一、二学年肇庆校区，第三、四学年广州校区\n3.205 数字媒体艺术｜计划39｜学费39800-39800｜广州校区\n4.206 视觉传达设计｜计划30｜学费39800-39800｜广州校区\n5.204 动画｜计划30｜学费39000-39000｜广州校区", "risk": "去年最低排位比她靠后 5604 名，偏兜底。；已服从，组内有谨慎专业，存在被调剂到不想读专业的风险。；组内有高收费/特殊项目，需确认费用和项目性质。", "amap": "https://uri.amap.com/search?keyword=%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E5%A2%9E%E5%9F%8E%E5%8C%BA%E8%8D%94%E6%B9%96%E8%A1%97%E9%81%93%E5%8D%8E%E5%95%86%E8%B7%AF1%E5%8F%B7", "baidu": "https://map.baidu.com/search/%E5%B9%BF%E4%B8%9C%E7%9C%81%E5%B9%BF%E5%B7%9E%E5%B8%82%E5%A2%9E%E5%9F%8E%E5%8C%BA%E8%8D%94%E6%B9%96%E8%A1%97%E9%81%93%E5%8D%8E%E5%95%86%E8%B7%AF1%E5%8F%B7"}];
+    const colors = {
+      "冲高": "#dc2626",
+      "冲": "#f97316",
+      "小冲/稳": "#eab308",
+      "稳": "#16a34a",
+      "保": "#2563eb",
+      "保底": "#4f46e5",
+      "缺排位": "#6b7280"
+    };
+    const tierOrder = ["冲高", "冲", "小冲/稳", "稳", "保", "保底", "缺排位"];
+    const active = new Set(tierOrder);
+    const map = L.map("map", { zoomControl: true });
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).on("tileerror", () => {
+      document.getElementById("fallback").style.display = "block";
+    }).addTo(map);
+    const bounds = L.latLngBounds(markers.map(m => [m.lat, m.lon]));
+    map.fitBounds(bounds.pad(0.18));
+    const markerLayer = L.layerGroup().addTo(map);
+    const markerRefs = new Map();
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[ch]));
+    }
+
+    function popupHtml(m) {
+      const campusSuffix = m.sub ? ` <span style="color:#64748b">点位${m.sub}</span>` : "";
+      return `<div class="popup">
+        <h2>${esc(m.order)}. ${esc(m.school)} ${esc(m.group)}${campusSuffix}</h2>
+        <p><b>${esc(m.tier)}</b>｜2025排位 ${esc(m.rank)}｜差距 ${esc(m.diff)}｜最低分 ${esc(m.score)}</p>
+        <p><b>校区：</b>${esc(m.campus)}｜置信度 ${esc(m.confidence)}</p>
+        <p><b>地址：</b>${esc(m.address)}</p>
+        <p><b>系统地点：</b>${esc(m.location)}</p>
+        
+        <p><b>已填专业：</b>${esc(m.selected)}</p>
+        <p class="risk"><b>提醒：</b>校区和费用以招生系统、录取通知和学校新生指南为准。</p>
+        
+        <p><a href="${m.amap}" target="_blank">高德搜索</a><a href="${m.baidu}" target="_blank">百度地图</a></p>
+      </div>`;
+    }
+
+    function render() {
+      markerLayer.clearLayers();
+      markerRefs.clear();
+      const list = document.getElementById("list");
+      list.innerHTML = "";
+      markers.forEach((m, idx) => {
+        if (!active.has(m.tier)) return;
+        const color = colors[m.tier] || "#6b7280";
+        const marker = L.circleMarker([m.lat, m.lon], {
+          radius: 9,
+          color: "#111827",
+          weight: 1,
+          fillColor: color,
+          fillOpacity: 0.88
+        }).bindPopup(popupHtml(m));
+        marker.addTo(markerLayer);
+        markerRefs.set(idx, marker);
+        const div = document.createElement("div");
+        div.className = "item";
+        div.style.borderLeftColor = color;
+        div.innerHTML = `<strong>${esc(m.order)}. ${esc(m.school)} ${esc(m.group)}｜${esc(m.tier)}</strong>
+          <small>${esc(m.campus)}｜排位 ${esc(m.rank)}｜差距 ${esc(m.diff)}｜${esc(m.city)}</small>`;
+        div.addEventListener("click", () => {
+          map.setView([m.lat, m.lon], 12);
+          marker.openPopup();
+        });
+        list.appendChild(div);
+      });
+    }
+
+    function renderFilters() {
+      const filters = document.getElementById("filters");
+      filters.innerHTML = "";
+      tierOrder.forEach(tier => {
+        if (!markers.some(m => m.tier === tier)) return;
+        const label = document.createElement("label");
+        label.innerHTML = `<span class="dot" style="background:${colors[tier]}"></span><input type="checkbox" checked />${tier}`;
+        const input = label.querySelector("input");
+        input.addEventListener("change", () => {
+          if (input.checked) active.add(tier); else active.delete(tier);
+          render();
+        });
+        filters.appendChild(label);
+      });
+      const legend = document.getElementById("legend");
+      legend.innerHTML = tierOrder.filter(t => markers.some(m => m.tier === t)).map(t => `<div><span class="dot" style="background:${colors[t]}"></span>${t}</div>`).join("");
+    }
+
+    renderFilters();
+    render();
+  </script>
+</body>
+</html>
